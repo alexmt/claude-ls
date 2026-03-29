@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,6 +33,8 @@ type previewLoadedMsg struct {
 	messages  []store.PreviewMessage
 }
 
+type sessionDeletedMsg struct{ id string }
+
 type model struct {
 	sessions   []store.Session
 	cursor     int
@@ -45,6 +48,8 @@ type model struct {
 
 	renaming    bool
 	renameInput string
+
+	confirming bool // waiting for delete confirmation
 
 	width, height int
 }
@@ -76,9 +81,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case sessionDeletedMsg:
+		return m.handleDeleted(msg.id), nil
+
 	case tea.KeyMsg:
 		if m.renaming {
 			return m.updateRename(msg)
+		}
+		if m.confirming {
+			return m.updateConfirm(msg)
 		}
 		return m.updateNav(msg)
 	}
@@ -132,9 +143,42 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renaming = true
 			m.renameInput = ""
 		}
+
+	case "d":
+		if m.focus == paneList && len(m.sessions) > 0 {
+			m.confirming = true
+		}
 	}
 
 	return m, nil
+}
+
+func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.confirming = false
+		s := m.sessions[m.cursor]
+		return m, deleteSession(s)
+	case "n", "N", "esc":
+		m.confirming = false
+	}
+	return m, nil
+}
+
+func (m model) handleDeleted(id string) model {
+	for i, s := range m.sessions {
+		if s.ID == id {
+			m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+			break
+		}
+	}
+	if m.cursor >= len(m.sessions) {
+		m.cursor = max(0, len(m.sessions)-1)
+	}
+	m.clampListOffset()
+	m.preview = nil
+	m.previewID = ""
+	return m
 }
 
 func (m model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -311,7 +355,9 @@ func (m model) renderPreview(width int) string {
 	contentHeight := max(0, usable-headerLines)
 
 	var contentLines []string
-	if m.renaming {
+	if m.confirming {
+		contentLines = m.renderConfirmOverlay(width)
+	} else if m.renaming {
 		contentLines = m.renderRenameOverlay(width)
 	} else if m.previewLoading {
 		contentLines = []string{"loading…"}
@@ -340,7 +386,8 @@ func (m model) renderPreview(width int) string {
 
 func (m model) renderMessages(width int) []string {
 	var lines []string
-	for _, msg := range m.preview {
+	for i := len(m.preview) - 1; i >= 0; i-- {
+		msg := m.preview[i]
 		switch msg.Role {
 		case store.RoleUser:
 			lines = append(lines, userStyle.Render("You")+":")
@@ -360,12 +407,30 @@ func (m model) renderRenameOverlay(width int) []string {
 	return []string{"", prompt, "", dimStyle.Render("enter to confirm, esc to cancel")}
 }
 
+func (m model) renderConfirmOverlay(width int) []string {
+	if len(m.sessions) == 0 {
+		return nil
+	}
+	name := m.sessions[m.cursor].DisplayName()
+	return []string{
+		"",
+		dangerStyle.Render("Delete session?"),
+		"",
+		truncate(name, width-2),
+		"",
+		dimStyle.Render("y  yes, delete permanently"),
+		dimStyle.Render("n  cancel"),
+	}
+}
+
 func (m model) renderStatusBar() string {
 	var keys string
-	if m.renaming {
+	if m.confirming {
+		keys = "y delete  n cancel"
+	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "enter resume  r rename  / search  o orphaned  tab focus  q quit"
+		keys = "enter resume  r rename  d delete  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}
@@ -388,6 +453,17 @@ func resumeSession(id string) tea.Cmd {
 	})
 }
 
+func deleteSession(s store.Session) tea.Cmd {
+	return func() tea.Msg {
+		home, _ := os.UserHomeDir()
+		encoded := store.EncodeProjectPath(s.ProjectPath)
+		base := filepath.Join(home, ".claude", "projects", encoded)
+		os.Remove(filepath.Join(base, s.ID+".jsonl"))
+		os.RemoveAll(filepath.Join(base, s.ID))
+		return sessionDeletedMsg{id: s.ID}
+	}
+}
+
 func renameSession(id, name string) tea.Cmd {
 	return tea.ExecProcess(
 		exec.Command("claude", "-p", "--resume", id, fmt.Sprintf("/rename %s", name)),
@@ -406,6 +482,7 @@ var (
 	userStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Bold(true)
 	assistantStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	statusStyle       = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("250"))
+	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 )
 
 // helpers
