@@ -39,6 +39,10 @@ type sessionRenamedMsg struct {
 	id   string
 	name string
 }
+type sessionMovedMsg struct {
+	id          string
+	newProject  string
+}
 
 type model struct {
 	sessions   []store.Session
@@ -55,6 +59,12 @@ type model struct {
 	renameInput string
 
 	confirming bool // waiting for delete confirmation
+
+	moving       bool
+	moveProjects []string // all candidate project paths (excluding current)
+	moveCursor   int
+	moveOffset   int
+	moveFilter   string
 
 	width, height int
 }
@@ -92,12 +102,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionRenamedMsg:
 		return m.handleRenamed(msg.id, msg.name), nil
 
+	case sessionMovedMsg:
+		return m.handleMoved(msg.id, msg.newProject), nil
+
 	case tea.KeyMsg:
 		if m.renaming {
 			return m.updateRename(msg)
 		}
 		if m.confirming {
 			return m.updateConfirm(msg)
+		}
+		if m.moving {
+			return m.updateMove(msg)
 		}
 		return m.updateNav(msg)
 	}
@@ -170,9 +186,103 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneList && len(m.sessions) > 0 {
 			m.confirming = true
 		}
+
+	case "m":
+		if m.focus == paneList && len(m.sessions) > 0 {
+			m.moveProjects = uniqueProjects(m.sessions, m.sessions[m.cursor].ProjectPath)
+			if len(m.moveProjects) > 0 {
+				m.moving = true
+				m.moveCursor = 0
+			}
+		}
 	}
 
 	return m, nil
+}
+
+func (m model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredProjects()
+
+	switch msg.String() {
+	case "esc":
+		m.moving = false
+		m.moveFilter = ""
+	case "up":
+		if m.moveCursor > 0 {
+			m.moveCursor--
+			m = m.clampMoveOffset(filtered)
+		}
+	case "down":
+		if m.moveCursor < len(filtered)-1 {
+			m.moveCursor++
+			m = m.clampMoveOffset(filtered)
+		}
+	case "backspace":
+		if len(m.moveFilter) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.moveFilter)
+			m.moveFilter = m.moveFilter[:len(m.moveFilter)-size]
+			m.moveCursor = 0
+			m.moveOffset = 0
+		}
+	case "enter":
+		if len(filtered) > 0 {
+			target := filtered[m.moveCursor]
+			s := m.sessions[m.cursor]
+			m.moving = false
+			m.moveFilter = ""
+			return m, moveSession(s, target)
+		}
+	default:
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			m.moveFilter += msg.String()
+			m.moveCursor = 0
+			m.moveOffset = 0
+		}
+	}
+	return m, nil
+}
+
+func (m model) filteredProjects() []string {
+	if m.moveFilter == "" {
+		return m.moveProjects
+	}
+	filter := strings.ToLower(m.moveFilter)
+	var out []string
+	for _, p := range m.moveProjects {
+		if strings.Contains(strings.ToLower(formatPath(p)), filter) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (m model) clampMoveOffset(filtered []string) model {
+	page := m.movePickerPageSize()
+	if m.moveCursor < m.moveOffset {
+		m.moveOffset = m.moveCursor
+	} else if m.moveCursor >= m.moveOffset+page {
+		m.moveOffset = m.moveCursor - page + 1
+	}
+	return m
+}
+
+func (m model) movePickerPageSize() int {
+	// total height
+	// - 1 status bar
+	// - 3 preview pane header (session name + path + separator)
+	// - 4 overlay header (blank + title + filter + separator)
+	return max(1, m.height-1-3-4)
+}
+
+func (m model) handleMoved(id, newProject string) model {
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions[i].ProjectPath = newProject
+			m.sessions[i].IsOrphaned = false
+			break
+		}
+	}
+	return m
 }
 
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -404,7 +514,9 @@ func (m model) renderPreview(width int) string {
 	contentHeight := max(0, usable-headerLines)
 
 	var contentLines []string
-	if m.confirming {
+	if m.moving {
+		contentLines = m.renderMoveOverlay(width)
+	} else if m.confirming {
 		contentLines = m.renderConfirmOverlay(width)
 	} else if m.renaming {
 		contentLines = m.renderRenameOverlay(width)
@@ -456,6 +568,46 @@ func (m model) renderRenameOverlay(width int) []string {
 	return []string{"", prompt, "", dimStyle.Render("enter to confirm, esc to cancel")}
 }
 
+func (m model) renderMoveOverlay(width int) []string {
+	filtered := m.filteredProjects()
+
+	filterDisplay := m.moveFilter + "█"
+	if m.moveFilter == "" {
+		filterDisplay = dimStyle.Render("type to filter…") + "█"
+	}
+
+	lines := []string{
+		"",
+		previewHeaderStyle.Render("Move to project:"),
+		filterDisplay,
+		dimStyle.Render(strings.Repeat("─", max(0, width-1))),
+	}
+
+	page := m.movePickerPageSize()
+	end := m.moveOffset + page
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	if len(filtered) == 0 {
+		lines = append(lines, dimStyle.Render("  no matches"))
+	}
+
+	for i := m.moveOffset; i < end; i++ {
+		display := formatPath(filtered[i])
+		if width > 5 && len(display) > width-4 {
+			display = "…" + display[len(display)-(width-5):]
+		}
+		row := "  " + display
+		if i == m.moveCursor {
+			row = selectedStyle.Render("> " + display)
+		}
+		lines = append(lines, row)
+	}
+
+	return lines
+}
+
 func (m model) renderConfirmOverlay(width int) []string {
 	if len(m.sessions) == 0 {
 		return nil
@@ -474,12 +626,14 @@ func (m model) renderConfirmOverlay(width int) []string {
 
 func (m model) renderStatusBar() string {
 	var keys string
-	if m.confirming {
+	if m.moving {
+		keys = "↑/↓ select project  enter move here  esc cancel"
+	} else if m.confirming {
 		keys = "y delete  n cancel"
 	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "enter resume  r rename  d delete  g/G top/bottom  tab focus  q quit"
+		keys = "enter resume  r rename  m move  d delete  g/G top/bottom  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}
@@ -500,6 +654,15 @@ func resumeSession(id string) tea.Cmd {
 	return tea.ExecProcess(exec.Command("claude", "--resume", id), func(err error) tea.Msg {
 		return nil
 	})
+}
+
+func moveSession(s store.Session, targetProject string) tea.Cmd {
+	return func() tea.Msg {
+		if err := store.MoveSession(s, targetProject); err != nil {
+			return nil
+		}
+		return sessionMovedMsg{id: s.ID, newProject: targetProject}
+	}
 }
 
 func deleteSession(s store.Session) tea.Cmd {
@@ -598,6 +761,18 @@ func wrapText(text string, width int) []string {
 		}
 	}
 	return lines
+}
+
+func uniqueProjects(sessions []store.Session, exclude string) []string {
+	seen := map[string]bool{exclude: true}
+	var projects []string
+	for _, s := range sessions {
+		if !seen[s.ProjectPath] {
+			seen[s.ProjectPath] = true
+			projects = append(projects, s.ProjectPath)
+		}
+	}
+	return projects
 }
 
 func max(a, b int) int {
