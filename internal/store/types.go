@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 type Session struct {
 	ID          string
@@ -11,6 +14,10 @@ type Session struct {
 	LastActive  time.Time
 	IsOrphaned  bool // project path doesn't exist on disk
 	IsNamed     bool // has a custom title set via /rename
+}
+
+func closeQuietly(c io.Closer) {
+	_ = c.Close()
 }
 
 // DisplayName returns the custom title if set, otherwise the slug.

@@ -21,9 +21,9 @@ type PreviewMessage struct {
 }
 
 type contentBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text"`
-	Name  string `json:"name"` // for tool_use
+	Type string `json:"type"`
+	Text string `json:"text"`
+	Name string `json:"name"` // for tool_use
 }
 
 type message struct {
@@ -50,7 +50,7 @@ func LoadPreview(session Session) ([]PreviewMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer closeQuietly(f)
 
 	var messages []PreviewMessage
 	scanner := bufio.NewScanner(f)

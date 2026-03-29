@@ -40,8 +40,8 @@ type sessionRenamedMsg struct {
 	name string
 }
 type sessionMovedMsg struct {
-	id          string
-	newProject  string
+	id         string
+	newProject string
 }
 
 type model struct {
@@ -138,7 +138,8 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m = m.clampListOffset()
-				return m, m.triggerPreview()
+				m, cmd := m.triggerPreview()
+				return m, cmd
 			}
 		} else {
 			if m.previewScroll > 0 {
@@ -151,7 +152,8 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
 				m = m.clampListOffset()
-				return m, m.triggerPreview()
+				m, cmd := m.triggerPreview()
+				return m, cmd
 			}
 		} else {
 			m.previewScroll++
@@ -161,14 +163,16 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneList && len(m.sessions) > 0 {
 			m.cursor = 0
 			m = m.clampListOffset()
-			return m, m.triggerPreview()
+			m, cmd := m.triggerPreview()
+			return m, cmd
 		}
 
 	case "G":
 		if m.focus == paneList && len(m.sessions) > 0 {
 			m.cursor = len(m.sessions) - 1
 			m = m.clampListOffset()
-			return m, m.triggerPreview()
+			m, cmd := m.triggerPreview()
+			return m, cmd
 		}
 
 	case "enter":
@@ -210,12 +214,12 @@ func (m model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up":
 		if m.moveCursor > 0 {
 			m.moveCursor--
-			m = m.clampMoveOffset(filtered)
+			m = m.clampMoveOffset()
 		}
 	case "down":
 		if m.moveCursor < len(filtered)-1 {
 			m.moveCursor++
-			m = m.clampMoveOffset(filtered)
+			m = m.clampMoveOffset()
 		}
 	case "backspace":
 		if len(m.moveFilter) > 0 {
@@ -256,7 +260,7 @@ func (m model) filteredProjects() []string {
 	return out
 }
 
-func (m model) clampMoveOffset(filtered []string) model {
+func (m model) clampMoveOffset() model {
 	page := m.movePickerPageSize()
 	if m.moveCursor < m.moveOffset {
 		m.moveOffset = m.moveCursor
@@ -364,17 +368,17 @@ func (m model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) triggerPreview() tea.Cmd {
+func (m model) triggerPreview() (model, tea.Cmd) {
 	if len(m.sessions) == 0 {
-		return nil
+		return m, nil
 	}
 	s := m.sessions[m.cursor]
 	if s.ID == m.previewID {
-		return nil
+		return m, nil
 	}
 	m.previewLoading = true
 	m.previewID = s.ID
-	return loadPreview(s)
+	return m, loadPreview(s)
 }
 
 func (m model) currentID() string {
@@ -444,9 +448,7 @@ func (m model) renderList(width int) string {
 
 		row := m.renderSessionRow(s, i == m.cursor, width)
 		// each row is "line1\nline2" — split and add individually
-		for _, l := range strings.SplitN(row, "\n", 2) {
-			displayLines = append(displayLines, l)
-		}
+		displayLines = append(displayLines, strings.SplitN(row, "\n", 2)...)
 
 		if len(displayLines) >= usable {
 			break
@@ -563,7 +565,7 @@ func (m model) renderMessages(width int) []string {
 	return lines
 }
 
-func (m model) renderRenameOverlay(width int) []string {
+func (m model) renderRenameOverlay(_ int) []string {
 	prompt := "Rename: " + m.renameInput + "█"
 	return []string{"", prompt, "", dimStyle.Render("enter to confirm, esc to cancel")}
 }
@@ -670,8 +672,8 @@ func deleteSession(s store.Session) tea.Cmd {
 		home, _ := os.UserHomeDir()
 		encoded := store.EncodeProjectPath(s.ProjectPath)
 		base := filepath.Join(home, ".claude", "projects", encoded)
-		os.Remove(filepath.Join(base, s.ID+".jsonl"))
-		os.RemoveAll(filepath.Join(base, s.ID))
+		_ = os.Remove(filepath.Join(base, s.ID+".jsonl"))
+		_ = os.RemoveAll(filepath.Join(base, s.ID))
 		return sessionDeletedMsg{id: s.ID}
 	}
 }
@@ -688,15 +690,15 @@ func renameSession(s store.Session, name string) tea.Cmd {
 // styles
 
 var (
-	selectedStyle     = lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true)
-	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	separatorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	dividerStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	selectedStyle      = lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true)
+	dimStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	separatorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	dividerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	previewHeaderStyle = lipgloss.NewStyle().Bold(true)
-	userStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Bold(true)
-	assistantStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	statusStyle       = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("250"))
-	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	userStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Bold(true)
+	assistantStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	statusStyle        = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("250"))
+	dangerStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 )
 
 // helpers
