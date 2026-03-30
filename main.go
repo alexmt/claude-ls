@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/amatyushentsev/claude-ls/internal/store"
-	"github.com/amatyushentsev/claude-ls/internal/tui"
+	"github.com/alexmt/claude-ls/internal/store"
+	"github.com/alexmt/claude-ls/internal/tui"
 )
 
 func main() {

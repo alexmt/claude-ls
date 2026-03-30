@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/amatyushentsev/claude-ls/internal/store"
+	"github.com/alexmt/claude-ls/internal/store"
 )
 
 // layout constants

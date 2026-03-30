@@ -1,4 +1,4 @@
-module github.com/amatyushentsev/claude-ls
+module github.com/alexmt/claude-ls
 
 go 1.24.13
 
