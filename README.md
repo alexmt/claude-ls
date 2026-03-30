@@ -14,6 +14,22 @@ Claude Code links sessions to directory paths — `~/.claude/projects/` uses enc
 
 `claude-ls` reads `~/.claude/projects/` directly — no extra files stored. It gives you a fast interactive view of all your sessions, lets you preview conversations, surface orphaned sessions from renamed directories, and resume any session with one keypress.
 
+## Installation
+
+**Homebrew (recommended):**
+```bash
+brew tap alexmt/tap
+brew install claude-ls
+```
+
+**Build from source:**
+```bash
+git clone https://github.com/alexmt/claude-ls.git
+cd claude-ls
+make build
+# binary is at dist/claude-ls
+```
+
 ## Usage
 
 ```
