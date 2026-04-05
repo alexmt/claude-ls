@@ -177,7 +177,7 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if m.focus == paneList && len(m.sessions) > 0 {
-			return m, resumeSession(m.sessions[m.cursor].ID)
+			return m, resumeSession(m.sessions[m.cursor])
 		}
 
 	case "r":
@@ -652,8 +652,10 @@ func loadPreview(s store.Session) tea.Cmd {
 	}
 }
 
-func resumeSession(id string) tea.Cmd {
-	return tea.ExecProcess(exec.Command("claude", "--resume", id), func(err error) tea.Msg {
+func resumeSession(s store.Session) tea.Cmd {
+	cmd := exec.Command("claude", "--resume", s.ID)
+	cmd.Dir = s.ProjectPath
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return nil
 	})
 }
