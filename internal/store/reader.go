@@ -60,7 +60,7 @@ func Load() ([]Session, error) {
 			jsonlPath := filepath.Join(projectsDir, entry.Name(), f.Name())
 
 			session, err := readSession(jsonlPath, id)
-			if err != nil {
+			if err != nil || session.ProjectPath == "" || session.LastActive.IsZero() {
 				continue
 			}
 
