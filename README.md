@@ -2,7 +2,8 @@
 
 A terminal UI for managing Claude Code sessions.
 
-[![asciicast](https://asciinema.org/a/901527.svg)](https://asciinema.org/a/901527)
+![demo](https://github.com/user-attachments/assets/78d747d2-5846-485e-8cac-ee142dd43b8c)
+
 
 ## The Problem
 
