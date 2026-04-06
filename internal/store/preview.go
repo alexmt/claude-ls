@@ -99,6 +99,10 @@ func LoadPreview(session Session) ([]PreviewMessage, error) {
 }
 
 func encodeProjectPath(p string) string {
+	return EncodeProjectPath(p)
+}
+
+func EncodeProjectPath(p string) string {
 	if len(p) == 0 {
 		return p
 	}
