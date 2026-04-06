@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -34,6 +35,10 @@ type previewLoadedMsg struct {
 }
 
 type sessionDeletedMsg struct{ id string }
+type sessionRenamedMsg struct {
+	id   string
+	name string
+}
 
 type model struct {
 	sessions   []store.Session
@@ -83,6 +88,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionDeletedMsg:
 		return m.handleDeleted(msg.id), nil
+
+	case sessionRenamedMsg:
+		return m.handleRenamed(msg.id, msg.name), nil
 
 	case tea.KeyMsg:
 		if m.renaming {
@@ -165,6 +173,32 @@ func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) handleRenamed(id, name string) model {
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions[i].CustomTitle = name
+			m.sessions[i].IsNamed = true
+			break
+		}
+	}
+	// re-sort: named sessions float to top
+	sort.Slice(m.sessions, func(i, j int) bool {
+		if m.sessions[i].IsNamed != m.sessions[j].IsNamed {
+			return m.sessions[i].IsNamed
+		}
+		return m.sessions[i].LastActive.After(m.sessions[j].LastActive)
+	})
+	// restore cursor to the renamed session
+	for i, s := range m.sessions {
+		if s.ID == id {
+			m.cursor = i
+			break
+		}
+	}
+	m.clampListOffset()
+	return m
+}
+
 func (m model) handleDeleted(id string) model {
 	for i, s := range m.sessions {
 		if s.ID == id {
@@ -191,7 +225,7 @@ func (m model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.renaming = false
 		m.renameInput = ""
 		if name != "" && len(m.sessions) > 0 {
-			return m, renameSession(m.sessions[m.cursor].ID, name)
+			return m, renameSession(m.sessions[m.cursor], name)
 		}
 	case "backspace":
 		if len(m.renameInput) > 0 {
@@ -199,7 +233,7 @@ func (m model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renameInput = m.renameInput[:len(m.renameInput)-size]
 		}
 	default:
-		if msg.Type == tea.KeyRunes {
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
 			m.renameInput += msg.String()
 		}
 	}
@@ -464,11 +498,13 @@ func deleteSession(s store.Session) tea.Cmd {
 	}
 }
 
-func renameSession(id, name string) tea.Cmd {
-	return tea.ExecProcess(
-		exec.Command("claude", "-p", "--resume", id, fmt.Sprintf("/rename %s", name)),
-		func(err error) tea.Msg { return nil },
-	)
+func renameSession(s store.Session, name string) tea.Cmd {
+	return func() tea.Msg {
+		if err := store.RenameSession(s, name); err != nil {
+			return nil
+		}
+		return sessionRenamedMsg{id: s.ID, name: name}
+	}
 }
 
 // styles
