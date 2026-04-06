@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
 
 // auto-generated slugs are exactly three lowercase words: adj-adj-surname
-var autoSlugRe = regexp.MustCompile(`^[a-z]+-[a-z]+-[a-z]+$`)
-
 type jsonlEntry struct {
 	Type        string    `json:"type"`
 	Timestamp   time.Time `json:"timestamp"`
@@ -90,7 +87,7 @@ func readSession(path, id string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	defer f.Close()
+	defer closeQuietly(f)
 
 	s := Session{ID: id}
 
@@ -132,7 +129,7 @@ func loadHistory(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer closeQuietly(f)
 
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(f)

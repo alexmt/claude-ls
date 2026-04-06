@@ -28,7 +28,7 @@ func RenameSession(s Session, name string) error {
 	if err != nil {
 		return fmt.Errorf("open session file: %w", err)
 	}
-	defer f.Close()
+	defer closeQuietly(f)
 
 	entry := customTitleEntry{
 		Type:        "custom-title",
