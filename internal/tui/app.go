@@ -121,7 +121,7 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneList {
 			if m.cursor > 0 {
 				m.cursor--
-				m.clampListOffset()
+				m = m.clampListOffset()
 				return m, m.triggerPreview()
 			}
 		} else {
@@ -134,11 +134,25 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneList {
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
-				m.clampListOffset()
+				m = m.clampListOffset()
 				return m, m.triggerPreview()
 			}
 		} else {
 			m.previewScroll++
+		}
+
+	case "g":
+		if m.focus == paneList && len(m.sessions) > 0 {
+			m.cursor = 0
+			m = m.clampListOffset()
+			return m, m.triggerPreview()
+		}
+
+	case "G":
+		if m.focus == paneList && len(m.sessions) > 0 {
+			m.cursor = len(m.sessions) - 1
+			m = m.clampListOffset()
+			return m, m.triggerPreview()
 		}
 
 	case "enter":
@@ -195,7 +209,7 @@ func (m model) handleRenamed(id, name string) model {
 			break
 		}
 	}
-	m.clampListOffset()
+	m = m.clampListOffset()
 	return m
 }
 
@@ -209,7 +223,7 @@ func (m model) handleDeleted(id string) model {
 	if m.cursor >= len(m.sessions) {
 		m.cursor = max(0, len(m.sessions)-1)
 	}
-	m.clampListOffset()
+	m = m.clampListOffset()
 	m.preview = nil
 	m.previewID = ""
 	return m
@@ -286,13 +300,14 @@ func (m model) listPageSize() int {
 	return usable / 2
 }
 
-func (m model) clampListOffset() {
+func (m model) clampListOffset() model {
 	page := m.listPageSize()
 	if m.cursor < m.listOffset {
 		m.listOffset = m.cursor
 	} else if m.cursor >= m.listOffset+page {
 		m.listOffset = m.cursor - page + 1
 	}
+	return m
 }
 
 func (m model) renderList(width int) string {
@@ -464,7 +479,7 @@ func (m model) renderStatusBar() string {
 	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "enter resume  r rename  d delete  tab focus  q quit"
+		keys = "enter resume  r rename  d delete  g/G top/bottom  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}

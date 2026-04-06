@@ -12,15 +12,12 @@ Claude Code links sessions to directory paths — `~/.claude/projects/` uses enc
 
 ## Solution
 
-`claude-ls` reads `~/.claude/projects/` directly. It gives you a fast interactive view of all your sessions, lets you preview conversations, surface orphaned sessions from renamed directories, and resume any session with one keypress. The only extra state it stores is session names you explicitly set, in `~/.claude/claude-ls.json`.
+`claude-ls` reads `~/.claude/projects/` directly — no extra files stored. It gives you a fast interactive view of all your sessions, lets you preview conversations, surface orphaned sessions from renamed directories, and resume any session with one keypress.
 
 ## Usage
 
 ```
-claude-ls              # open interactive TUI (primary mode)
-claude-ls orphaned     # list sessions whose project directory no longer exists
-claude-ls search <q>   # search across session first messages
-claude-ls resume <id>  # resume a session by slug or UUID
+claude-ls    # open interactive TUI
 ```
 
 ## Interactive TUI
@@ -29,53 +26,55 @@ Running `claude-ls` opens a split-pane terminal UI:
 
 ```
 ┌─ claude-ls ────────────────────────────────┬─ preview ──────────────────────────┐
-│ » auth-middleware-refactor  2h ago  42 │ hopeful-coding-turing               │
-│   ~/root/myproject                     │ ~/root/personal  •  3 days ago      │
-│ » obsidian-sync-debug       1d ago  18 │ ─────────────────────────────────── │
-│   ~/root/other                         │ You: can you refactor the auth      │
-│ ────────────────────────────────────── │ middleware to use the new token      │
-│ > hopeful-coding-turing     3d ago  91 │ validator?                          │
-│   ~/root/personal                      │                                     │
-│   lazy-morning-knuth         5d ago  7 │ Claude: Sure. The current impl in   │
-│   ~/root/akuity                        │ middleware/auth.go:47 uses...        │
-│ ✗ wandering-fox             1w ago  33 │ [tool: Read middleware/auth.go]      │
-│   ~/root/old-name (gone)               │                                     │
-│                                        │ You: looks good, now write tests    │
-│                                        │                                     │
-│                                        │ Claude: I'll create tests in...     │
-└────────────────────────────────────────┴─────────────────────────────────────┘
- [enter] resume  [r] rename  [/] search  [o] orphaned  [tab] focus  [q] quit
+│ » auth-middleware-refactor  2h ago  42     │ auth-middleware-refactor           │
+│   ~/root/myproject                         │ ~/root/myproject  •  2 hours ago   │
+│ » obsidian-sync-debug       1d ago  18     │ ───────────────────────────────────│
+│   ~/root/other                             │ Claude: I'll create tests in...    │
+│ ────────────────────────────────────────── │                                    │
+│ > hopeful-coding-turing     3d ago  91     │ You: looks good, now write tests   │
+│   ~/root/personal                          │                                    │
+│   lazy-morning-knuth         5d ago  7     │ Claude: Sure. The current impl in  │
+│   ~/root/akuity                            │ middleware/auth.go:47 uses...      │
+│ ✗ wandering-fox             1w ago  33     │ [tool: Read middleware/auth.go]    │
+│   ~/root/old-name (gone)                   │                                    │
+│                                            │ You: can you refactor the auth     │
+│                                            │ middleware to use the new token    │
+│                                            │ validator?                         │
+└────────────────────────────────────────────┴────────────────────────────────────┘
+ enter resume  r rename  d delete  g/G top/bottom  tab focus  q quit
 ```
 
 **Keybindings:**
 
 | Key | Action |
 |-----|--------|
-| `↑ / ↓` | Navigate session list |
+| `↑ / ↓` or `j / k` | Navigate session list |
+| `g / G` | Jump to top / bottom of list |
 | `enter` | Resume selected session in Claude |
-| `r` | Rename selected session (opens inline input) |
-| `/` | Search sessions |
-| `o` | Toggle showing orphaned sessions only |
+| `r` | Rename selected session (inline input, supports spaces) |
+| `d` | Delete selected session (confirmation required) |
 | `tab` | Switch focus between list and preview pane |
 | `j / k` | Scroll preview pane (when focused) |
 | `q` | Quit |
 
-**Named sessions** — sessions whose slug doesn't match the auto-generated `adj-adj-name` pattern — sort to the top, marked with `»`. Rename with `[r]`: claude-ls forks `claude -p --resume <id> '/rename <new-name>'` and lets Claude update its own data. No extra files stored by claude-ls.
+**Named sessions** — sessions renamed with `[r]` — sort to the top, marked with `»`. The name is written directly to the session JSONL file as a `custom-title` entry (same format Claude Code uses internally). No extra files stored by claude-ls.
 
-**Orphaned sessions** — sessions whose original project directory no longer exists — are shown with a ✗ marker. They are still resumable.
+**Orphaned sessions** — sessions whose original project directory no longer exists — are shown with a `✗` marker and dimmed path. They are still resumable.
+
+**Preview pane** — shows the conversation tail (most recent messages first). Switch focus with `tab`, scroll with `j / k`.
 
 ## Data Model
 
-`claude-ls` derives everything from `~/.claude/projects/`:
+`claude-ls` reads everything from `~/.claude/projects/` with no extra state:
 
 | Field | Source |
 |-------|--------|
-| Project path | Directory name (decoded from `-Users-alex-root-myproject` → `/Users/alex/root/myproject`) |
+| Project path | Directory name decoded (`-Users-alex-root-myproject` → `/Users/alex/root/myproject`) |
 | Session ID | JSONL filename (UUID) |
-| Slug | `slug` field in JSONL (e.g. `tender-seeking-milner`) |
+| Slug | `slug` field in JSONL |
+| Custom name | `customTitle` field in `custom-title` entries (written by `/rename` or `claude-ls`) |
 | First message | `~/.claude/history.jsonl` `display` field |
-| Last active | Last entry timestamp in session JSONL |
-| Message count | Line count of session JSONL |
+| Last active | Timestamp of last JSONL entry |
 | Orphaned | Project path does not exist on disk |
 
 ### `~/.claude/projects/` structure
@@ -90,31 +89,21 @@ Running `claude-ls` opens a split-pane terminal UI:
         └── tool-results/
 ```
 
-Each session JSONL is newline-delimited JSON. Relevant fields per line:
+Each session JSONL is newline-delimited JSON. Relevant entry types:
 
 ```json
-{
-  "type": "user" | "assistant" | "system" | ...,
-  "uuid": "...",
-  "sessionId": "...",
-  "timestamp": "2026-04-05T01:39:13.414Z",
-  "slug": "tender-seeking-milner",
-  "cwd": "/Users/alex/root/myproject",
-  "message": { "role": "user", "content": "..." }
-}
+{ "type": "user",         "slug": "tender-seeking-milner", "timestamp": "...", "message": { "role": "user", "content": "..." } }
+{ "type": "assistant",    "slug": "tender-seeking-milner", "timestamp": "...", "message": { "role": "assistant", "content": [...] } }
+{ "type": "custom-title", "customTitle": "my session name", "sessionId": "..." }
 ```
 
 ## Stack
 
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI framework
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) — terminal styling
-- [Bubbles](https://github.com/charmbracelet/bubbles) — list + viewport components
 
-## Status
+## Build
 
-Early development. Planned build order:
-
-- [ ] JSONL parser + data model
-- [ ] CLI skeleton (`orphaned`, `search`, `resume`)
-- [ ] TUI layout (split pane, navigation)
-- [ ] Session renaming (`~/.claude/claude-ls.json`)
+```
+make build    # outputs dist/claude-ls
+```
