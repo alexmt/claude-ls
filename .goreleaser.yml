@@ -1,0 +1,25 @@
+version: 2
+
+builds:
+  - binary: claude-ls
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - name: claude-ls
+    repository:
+      owner: alexmt
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/alexmt/claude-ls"
+    description: "Terminal UI for managing Claude Code sessions"
+    install: |
+      bin.install "claude-ls"
