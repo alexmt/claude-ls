@@ -20,6 +20,7 @@ type jsonlEntry struct {
 	Slug        string    `json:"slug"`
 	SessionID   string    `json:"sessionId"`
 	CustomTitle string    `json:"customTitle"`
+	Cwd         string    `json:"cwd"`
 }
 
 type historyEntry struct {
@@ -48,9 +49,6 @@ func Load() ([]Session, error) {
 			continue
 		}
 
-		projectPath := decodePath(entry.Name())
-		isOrphaned := !pathExists(projectPath)
-
 		files, err := os.ReadDir(filepath.Join(projectsDir, entry.Name()))
 		if err != nil {
 			continue
@@ -64,7 +62,7 @@ func Load() ([]Session, error) {
 			id := strings.TrimSuffix(f.Name(), ".jsonl")
 			jsonlPath := filepath.Join(projectsDir, entry.Name(), f.Name())
 
-			session, err := readSession(jsonlPath, id, projectPath, isOrphaned)
+			session, err := readSession(jsonlPath, id)
 			if err != nil {
 				continue
 			}
@@ -87,18 +85,14 @@ func Load() ([]Session, error) {
 	return sessions, nil
 }
 
-func readSession(path, id, projectPath string, isOrphaned bool) (Session, error) {
+func readSession(path, id string) (Session, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Session{}, err
 	}
 	defer f.Close()
 
-	s := Session{
-		ID:          id,
-		ProjectPath: projectPath,
-		IsOrphaned:  isOrphaned,
-	}
+	s := Session{ID: id}
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -112,21 +106,23 @@ func readSession(path, id, projectPath string, isOrphaned bool) (Session, error)
 			continue
 		}
 
+		// use cwd from first entry that has it as the project path
+		if s.ProjectPath == "" && e.Cwd != "" {
+			s.ProjectPath = e.Cwd
+		}
 		if e.Slug != "" {
 			s.Slug = e.Slug
 		}
-		// /rename writes a custom-title entry; takes precedence over slug
 		if e.Type == "custom-title" && e.CustomTitle != "" {
 			s.CustomTitle = e.CustomTitle
 		}
-
 		if !e.Timestamp.IsZero() {
 			lastTimestamp = e.Timestamp
 		}
 	}
 
 	s.IsNamed = s.CustomTitle != ""
-
+	s.IsOrphaned = s.ProjectPath == "" || !pathExists(s.ProjectPath)
 	s.LastActive = lastTimestamp
 	return s, scanner.Err()
 }
@@ -153,13 +149,6 @@ func loadHistory(path string) (map[string]string, error) {
 	}
 
 	return result, scanner.Err()
-}
-
-func decodePath(dirName string) string {
-	if len(dirName) == 0 || dirName[0] != '-' {
-		return dirName
-	}
-	return "/" + strings.ReplaceAll(dirName[1:], "-", "/")
 }
 
 func pathExists(p string) bool {
