@@ -41,7 +41,7 @@ Running `claude-ls` opens a split-pane terminal UI:
 │                                            │ middleware to use the new token    │
 │                                            │ validator?                         │
 └────────────────────────────────────────────┴────────────────────────────────────┘
- enter resume  r rename  d delete  g/G top/bottom  tab focus  q quit
+ enter resume  r rename  m move  d delete  g/G top/bottom  tab focus  q quit
 ```
 
 **Keybindings:**
@@ -52,12 +52,15 @@ Running `claude-ls` opens a split-pane terminal UI:
 | `g / G` | Jump to top / bottom of list |
 | `enter` | Resume selected session in Claude |
 | `r` | Rename selected session (inline input, supports spaces) |
+| `m` | Move session to another project (picker with live filter) |
 | `d` | Delete selected session (confirmation required) |
 | `tab` | Switch focus between list and preview pane |
 | `j / k` | Scroll preview pane (when focused) |
 | `q` | Quit |
 
 **Named sessions** — sessions renamed with `[r]` — sort to the top, marked with `»`. The name is written directly to the session JSONL file as a `custom-title` entry (same format Claude Code uses internally). No extra files stored by claude-ls.
+
+**Move** — `[m]` opens a project picker in the preview pane. Type to filter by path, `↑/↓` to navigate, `enter` to move. Moves the session JSONL and subagent directory to the target project.
 
 **Orphaned sessions** — sessions whose original project directory no longer exists — are shown with a `✗` marker and dimmed path. They are still resumable.
 
