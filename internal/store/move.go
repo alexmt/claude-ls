@@ -7,17 +7,14 @@ import (
 )
 
 // MoveSession moves a session's files from one project directory to another.
-func MoveSession(s Session, targetProject string) error {
+func MoveSession(s Session, targetDir string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
 
-	srcEncoded := EncodeProjectPath(s.ProjectPath)
-	dstEncoded := EncodeProjectPath(targetProject)
-
-	srcBase := filepath.Join(home, ".claude", "projects", srcEncoded)
-	dstBase := filepath.Join(home, ".claude", "projects", dstEncoded)
+	srcBase := filepath.Join(home, ".claude", "projects", s.ProjectDir)
+	dstBase := filepath.Join(home, ".claude", "projects", targetDir)
 
 	if err := os.MkdirAll(dstBase, 0755); err != nil {
 		return fmt.Errorf("create target project dir: %w", err)

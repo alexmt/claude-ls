@@ -22,7 +22,7 @@ func RenameSession(s Session, name string) error {
 		return err
 	}
 
-	path := filepath.Join(home, ".claude", "projects", EncodeProjectPath(s.ProjectPath), s.ID+".jsonl")
+	path := filepath.Join(home, ".claude", "projects", s.ProjectDir, s.ID+".jsonl")
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {

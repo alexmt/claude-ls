@@ -7,7 +7,9 @@ import (
 
 type Session struct {
 	ID          string
-	ProjectPath string // decoded from directory name
+	ProjectPath string // from cwd field in JSONL, used for display
+	ProjectDir  string // actual encoded directory name in ~/.claude/projects/
+	ResumeDir   string // directory to run `claude --resume` from
 	Slug        string // auto-generated slug
 	CustomTitle string // set via /rename, takes precedence over Slug
 	FirstMsg    string // from ~/.claude/history.jsonl

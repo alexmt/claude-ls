@@ -41,7 +41,13 @@ type sessionRenamedMsg struct {
 }
 type sessionMovedMsg struct {
 	id         string
-	newProject string
+	newProject string // path
+	newDir     string // encoded directory name
+}
+
+type projectEntry struct {
+	Path string // human-readable, for display
+	Dir  string // encoded directory name, for file operations
 }
 
 type model struct {
@@ -61,7 +67,7 @@ type model struct {
 	confirming bool // waiting for delete confirmation
 
 	moving       bool
-	moveProjects []string // all candidate project paths (excluding current)
+	moveProjects []projectEntry // all candidate projects (excluding current)
 	moveCursor   int
 	moveOffset   int
 	moveFilter   string
@@ -103,7 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRenamed(msg.id, msg.name), nil
 
 	case sessionMovedMsg:
-		return m.handleMoved(msg.id, msg.newProject), nil
+		return m.handleMoved(msg.id, msg.newProject, msg.newDir), nil
 
 	case tea.KeyMsg:
 		if m.renaming {
@@ -193,7 +199,7 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "m":
 		if m.focus == paneList && len(m.sessions) > 0 {
-			m.moveProjects = uniqueProjects(m.sessions, m.sessions[m.cursor].ProjectPath)
+			m.moveProjects = uniqueProjects(m.sessions, m.sessions[m.cursor].ProjectDir)
 			if len(m.moveProjects) > 0 {
 				m.moving = true
 				m.moveCursor = 0
@@ -234,7 +240,7 @@ func (m model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			s := m.sessions[m.cursor]
 			m.moving = false
 			m.moveFilter = ""
-			return m, moveSession(s, target)
+			return m, moveSession(s, target.Dir, target.Path)
 		}
 	default:
 		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
@@ -246,14 +252,14 @@ func (m model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) filteredProjects() []string {
+func (m model) filteredProjects() []projectEntry {
 	if m.moveFilter == "" {
 		return m.moveProjects
 	}
 	filter := strings.ToLower(m.moveFilter)
-	var out []string
+	var out []projectEntry
 	for _, p := range m.moveProjects {
-		if strings.Contains(strings.ToLower(formatPath(p)), filter) {
+		if strings.Contains(strings.ToLower(formatPath(p.Path)), filter) {
 			out = append(out, p)
 		}
 	}
@@ -278,10 +284,11 @@ func (m model) movePickerPageSize() int {
 	return max(1, m.height-1-3-4)
 }
 
-func (m model) handleMoved(id, newProject string) model {
+func (m model) handleMoved(id, newProject, newDir string) model {
 	for i := range m.sessions {
 		if m.sessions[i].ID == id {
 			m.sessions[i].ProjectPath = newProject
+			m.sessions[i].ProjectDir = newDir
 			m.sessions[i].IsOrphaned = false
 			break
 		}
@@ -596,7 +603,7 @@ func (m model) renderMoveOverlay(width int) []string {
 	}
 
 	for i := m.moveOffset; i < end; i++ {
-		display := formatPath(filtered[i])
+		display := formatPath(filtered[i].Path)
 		if width > 5 && len(display) > width-4 {
 			display = "…" + display[len(display)-(width-5):]
 		}
@@ -654,26 +661,25 @@ func loadPreview(s store.Session) tea.Cmd {
 
 func resumeSession(s store.Session) tea.Cmd {
 	cmd := exec.Command("claude", "--resume", s.ID)
-	cmd.Dir = s.ProjectPath
+	cmd.Dir = s.ResumeDir
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return nil
 	})
 }
 
-func moveSession(s store.Session, targetProject string) tea.Cmd {
+func moveSession(s store.Session, targetDir, targetPath string) tea.Cmd {
 	return func() tea.Msg {
-		if err := store.MoveSession(s, targetProject); err != nil {
+		if err := store.MoveSession(s, targetDir); err != nil {
 			return nil
 		}
-		return sessionMovedMsg{id: s.ID, newProject: targetProject}
+		return sessionMovedMsg{id: s.ID, newProject: targetPath, newDir: targetDir}
 	}
 }
 
 func deleteSession(s store.Session) tea.Cmd {
 	return func() tea.Msg {
 		home, _ := os.UserHomeDir()
-		encoded := store.EncodeProjectPath(s.ProjectPath)
-		base := filepath.Join(home, ".claude", "projects", encoded)
+		base := filepath.Join(home, ".claude", "projects", s.ProjectDir)
 		_ = os.Remove(filepath.Join(base, s.ID+".jsonl"))
 		_ = os.RemoveAll(filepath.Join(base, s.ID))
 		return sessionDeletedMsg{id: s.ID}
@@ -767,13 +773,13 @@ func wrapText(text string, width int) []string {
 	return lines
 }
 
-func uniqueProjects(sessions []store.Session, exclude string) []string {
-	seen := map[string]bool{exclude: true}
-	var projects []string
+func uniqueProjects(sessions []store.Session, excludeDir string) []projectEntry {
+	seen := map[string]bool{excludeDir: true}
+	var projects []projectEntry
 	for _, s := range sessions {
-		if !seen[s.ProjectPath] {
-			seen[s.ProjectPath] = true
-			projects = append(projects, s.ProjectPath)
+		if !seen[s.ProjectDir] {
+			seen[s.ProjectDir] = true
+			projects = append(projects, projectEntry{Path: s.ProjectPath, Dir: s.ProjectDir})
 		}
 	}
 	return projects

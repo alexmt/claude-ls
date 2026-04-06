@@ -63,6 +63,14 @@ func Load() ([]Session, error) {
 			if err != nil || session.ProjectPath == "" || session.LastActive.IsZero() {
 				continue
 			}
+			session.ProjectDir = entry.Name()
+			// ResumeDir: prefer decoded project dir (what Claude uses as its key)
+			// fall back to cwd from JSONL if the decoded path doesn't exist
+			if decoded := decodePath(entry.Name()); pathExists(decoded) {
+				session.ResumeDir = decoded
+			} else {
+				session.ResumeDir = session.ProjectPath
+			}
 
 			if msg, ok := history[id]; ok {
 				session.FirstMsg = msg
@@ -146,6 +154,15 @@ func loadHistory(path string) (map[string]string, error) {
 	}
 
 	return result, scanner.Err()
+}
+
+// decodePath reverses the simple slash encoding: -Users-alex-root-foo -> /Users/alex/root/foo.
+// This is only unambiguous for paths with no hyphens, spaces, or tildes in directory names.
+func decodePath(dirName string) string {
+	if len(dirName) == 0 || dirName[0] != '-' {
+		return dirName
+	}
+	return "/" + strings.ReplaceAll(dirName[1:], "-", "/")
 }
 
 func pathExists(p string) bool {

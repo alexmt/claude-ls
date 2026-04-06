@@ -42,9 +42,7 @@ func LoadPreview(session Session) ([]PreviewMessage, error) {
 		return nil, err
 	}
 
-	// find the JSONL file: ~/.claude/projects/<encoded>/<id>.jsonl
-	encoded := encodeProjectPath(session.ProjectPath)
-	jsonlPath := filepath.Join(home, ".claude", "projects", encoded, session.ID+".jsonl")
+	jsonlPath := filepath.Join(home, ".claude", "projects", session.ProjectDir, session.ID+".jsonl")
 
 	f, err := os.Open(jsonlPath)
 	if err != nil {
@@ -96,16 +94,4 @@ func LoadPreview(session Session) ([]PreviewMessage, error) {
 	}
 
 	return messages, scanner.Err()
-}
-
-func encodeProjectPath(p string) string {
-	return EncodeProjectPath(p)
-}
-
-func EncodeProjectPath(p string) string {
-	if len(p) == 0 {
-		return p
-	}
-	// /Users/alex/root/myproject -> -Users-alex-root-myproject
-	return strings.ReplaceAll(p, "/", "-")
 }
