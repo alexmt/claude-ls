@@ -2,6 +2,8 @@
 
 A terminal UI for managing Claude Code sessions.
 
+[![asciicast](https://asciinema.org/a/901527.svg)](https://asciinema.org/a/901527)
+
 ## The Problem
 
 Claude Code links sessions to directory paths — `~/.claude/projects/` uses encoded directory names (e.g. `-Users-alex-root-myproject`). This creates three friction points:
