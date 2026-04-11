@@ -418,10 +418,10 @@ func (m model) View() string {
 }
 
 // listPageSize returns how many sessions fit in the list pane.
-// Each session is 2 display lines; separator is 1.
+// Each session is 3 display lines; separator is 1.
 func (m model) listPageSize() int {
 	usable := m.height - 1 // minus status bar
-	return usable / 2
+	return usable / 3
 }
 
 func (m model) clampListOffset() model {
@@ -457,8 +457,8 @@ func (m model) renderList(width int) string {
 		}
 
 		row := m.renderSessionRow(s, i == m.cursor, width)
-		// each row is "line1\nline2" — split and add individually
-		displayLines = append(displayLines, strings.SplitN(row, "\n", 2)...)
+		// each row is "line1\nline2\nline3" — split and add individually
+		displayLines = append(displayLines, strings.Split(row, "\n")...)
 
 		if len(displayLines) >= usable {
 			break
@@ -499,15 +499,25 @@ func (m model) renderSessionRow(s store.Session, selected bool, width int) strin
 		path = "…" + path[len(path)-(width-5):]
 	}
 
+	snippet := s.LastMsg
+	snippetWidth := max(0, width-4)
+	if snippetWidth > 0 && len(snippet) > snippetWidth {
+		snippet = snippet[:snippetWidth-1] + "…"
+	}
+	// collapse newlines so multi-line messages stay on one row
+	snippet = strings.ReplaceAll(snippet, "\n", " ")
+
 	row1 := marker + name + strings.Repeat(" ", padding) + " " + age
 	row2 := "  " + dimStyle.Render(path)
+	row3 := "  " + dimStyle.Render(snippet)
 
 	if selected {
 		row1 = selectedStyle.Render(row1)
 		row2 = selectedStyle.Render(row2)
+		row3 = selectedStyle.Render(row3)
 	}
 
-	return row1 + "\n" + row2
+	return row1 + "\n" + row2 + "\n" + row3
 }
 
 func (m model) renderPreview(width int) string {

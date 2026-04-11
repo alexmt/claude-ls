@@ -13,6 +13,7 @@ type Session struct {
 	Slug        string // auto-generated slug
 	CustomTitle string // set via /rename, takes precedence over Slug
 	FirstMsg    string // from ~/.claude/history.jsonl
+	LastMsg     string // last human message text from session JSONL
 	LastActive  time.Time
 	IsOrphaned  bool // project path doesn't exist on disk
 	IsNamed     bool // has a custom title set via /rename
