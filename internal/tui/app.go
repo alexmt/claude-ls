@@ -75,11 +75,16 @@ type model struct {
 	searching   bool
 	searchQuery string
 
+	showSettings   bool
+	settingsCursor int
+
+	settings store.Settings
+
 	width, height int
 }
 
-func New(sessions []store.Session) model {
-	return model{sessions: sessions}
+func New(sessions []store.Session, settings store.Settings) model {
+	return model{sessions: sessions, settings: settings}
 }
 
 func (m model) visibleSessions() []store.Session {
@@ -166,6 +171,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searching {
 			return m.updateSearch(msg)
 		}
+		if m.showSettings {
+			return m.updateSettings(msg)
+		}
 		return m.updateNav(msg)
 	}
 
@@ -228,7 +236,7 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if m.focus == paneList && len(m.sessions) > 0 {
-			return m, resumeSession(m.sessions[m.cursor])
+			return m, resumeSession(m.sessions[m.cursor], m.settings.DangerouslySkipPermissions)
 		}
 
 	case "r":
@@ -257,6 +265,12 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchQuery = ""
 			m.cursor = 0
 			m.listOffset = 0
+		}
+
+	case "s":
+		if m.focus == paneList {
+			m.showSettings = true
+			m.settingsCursor = 0
 		}
 	}
 
@@ -320,7 +334,7 @@ func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		vs := m.visibleSessions()
 		if m.cursor < len(vs) {
-			return m, resumeSession(vs[m.cursor])
+			return m, resumeSession(vs[m.cursor], m.settings.DangerouslySkipPermissions)
 		}
 		return m, nil
 	case "up", "k":
@@ -653,7 +667,9 @@ func (m model) renderPreview(width int) string {
 	contentHeight := max(0, usable-headerLines)
 
 	var contentLines []string
-	if m.moving {
+	if m.showSettings {
+		contentLines = m.renderSettingsOverlay(width)
+	} else if m.moving {
 		contentLines = m.renderMoveOverlay(width)
 	} else if m.confirming {
 		contentLines = m.renderConfirmOverlay(width)
@@ -747,6 +763,43 @@ func (m model) renderMoveOverlay(width int) []string {
 	return lines
 }
 
+func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.showSettings = false
+	case "enter", " ":
+		// toggle the currently selected setting and persist
+		switch m.settingsCursor {
+		case 0:
+			m.settings.DangerouslySkipPermissions = !m.settings.DangerouslySkipPermissions
+			_ = store.SaveSettings(m.settings)
+		}
+	}
+	return m, nil
+}
+
+func (m model) renderSettingsOverlay(_ int) []string {
+	checkbox := "[ ]"
+	if m.settings.DangerouslySkipPermissions {
+		checkbox = "[✓]"
+	}
+
+	row := "  " + checkbox + " Dangerously skip permissions"
+	if m.settingsCursor == 0 {
+		row = selectedStyle.Render("> " + checkbox + " Dangerously skip permissions")
+	}
+
+	return []string{
+		"",
+		previewHeaderStyle.Render("Settings"),
+		"",
+		row,
+		dimStyle.Render("    Passes --dangerously-skip-permissions when resuming sessions"),
+		"",
+		dimStyle.Render("enter/space toggle   esc close"),
+	}
+}
+
 func (m model) renderConfirmOverlay(width int) []string {
 	if len(m.sessions) == 0 {
 		return nil
@@ -769,6 +822,8 @@ func (m model) renderStatusBar() string {
 		vs := m.visibleSessions()
 		count := fmt.Sprintf("%d/%d", len(vs), len(m.sessions))
 		keys = "/ " + m.searchQuery + "█   " + count + "   ↑/↓ navigate  enter resume  esc cancel"
+	} else if m.showSettings {
+		keys = "enter/space toggle   esc close"
 	} else if m.moving {
 		keys = "↑/↓ select project  enter move here  esc cancel"
 	} else if m.confirming {
@@ -776,7 +831,7 @@ func (m model) renderStatusBar() string {
 	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "/ search  enter resume  r rename  m move  d delete  g/G top/bottom  tab focus  q quit"
+		keys = "/ search  enter resume  r rename  m move  d delete  s settings  g/G top/bottom  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}
@@ -793,8 +848,12 @@ func loadPreview(s store.Session) tea.Cmd {
 	}
 }
 
-func resumeSession(s store.Session) tea.Cmd {
-	cmd := exec.Command("claude", "--resume", s.ID)
+func resumeSession(s store.Session, skipPerms bool) tea.Cmd {
+	args := []string{"--resume", s.ID}
+	if skipPerms {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	cmd := exec.Command("claude", args...)
 	cmd.Dir = s.ResumeDir
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return nil

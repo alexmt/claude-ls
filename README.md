@@ -76,7 +76,12 @@ Running `claude-ls` opens a split-pane terminal UI:
 | `d` | Delete selected session (confirmation required) |
 | `tab` | Switch focus between list and preview pane |
 | `j / k` | Scroll preview pane (when focused) |
+| `s` | Open settings |
 | `q` | Quit |
+
+**Settings** — `[s]` opens a settings overlay in the preview pane. Currently one option:
+
+- **Dangerously skip permissions** — when enabled, `--dangerously-skip-permissions` is passed to `claude --resume` every time you open a session. Toggle with `enter` or `space`. Settings are saved to `~/.config/claude-ls/settings.json`.
 
 **Search** — `[/]` enters search mode. Type to filter by session title or last message snippet; matches are highlighted inline. The status bar shows the query and result count. `↑/↓` navigate filtered results, `enter` resumes, `esc` exits and returns the cursor to the full list.
 
