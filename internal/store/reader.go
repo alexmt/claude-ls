@@ -137,13 +137,14 @@ func readSession(path, id string) (Session, error) {
 			lastTimestamp = e.Timestamp
 		}
 
-		// capture last human message text for list preview
-		if e.Type == "user" {
+		// capture last meaningful message text (user or assistant) for list preview
+		if e.Type == "user" || e.Type == "assistant" {
 			var me msgEntry
-			if json.Unmarshal(line, &me) == nil && me.Message.Role == "user" {
+			if json.Unmarshal(line, &me) == nil {
 				for _, block := range me.Message.Content {
 					if block.Type == "text" {
-						if t := strings.TrimSpace(block.Text); t != "" {
+						t := strings.TrimSpace(block.Text)
+						if t != "" && !strings.HasPrefix(t, "[Request interrupted") {
 							s.LastMsg = t
 							break
 						}
