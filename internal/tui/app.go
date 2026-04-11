@@ -82,6 +82,12 @@ type model struct {
 	showSettings   bool
 	settingsCursor int
 
+	pickingNew        bool
+	newPickerProjects []projectEntry // all known projects, CWD at index 0
+	newPickerCursor   int
+	newPickerOffset   int
+	newPickerFilter   string
+
 	confirmNew   bool   // keep-or-delete prompt after a new session exits
 	newSessionID string // ID of the session just created
 
@@ -180,6 +186,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searching {
 			return m.updateSearch(msg)
+		}
+		if m.pickingNew {
+			return m.updateNewPicker(msg)
 		}
 		if m.confirmNew {
 			return m.updateConfirmNew(msg)
@@ -288,12 +297,12 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		if m.focus == paneList {
-			existing := make(map[string]bool, len(m.sessions))
-			for _, s := range m.sessions {
-				existing[s.ID] = true
-			}
 			cwd, _ := os.Getwd()
-			return m, newSessionCmd(existing, cwd, m.settings.DangerouslySkipPermissions)
+			m.newPickerProjects = buildNewPickerProjects(m.sessions, cwd)
+			m.pickingNew = true
+			m.newPickerCursor = 0
+			m.newPickerOffset = 0
+			m.newPickerFilter = ""
 		}
 	}
 
@@ -432,6 +441,106 @@ func (m model) movePickerPageSize() int {
 	// - 3 preview pane header (session name + path + separator)
 	// - 4 overlay header (blank + title + filter + separator)
 	return max(1, m.height-1-3-4)
+}
+
+func (m model) updateNewPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredNewProjects()
+
+	switch msg.String() {
+	case "esc":
+		m.pickingNew = false
+		m.newPickerFilter = ""
+	case "up":
+		if m.newPickerCursor > 0 {
+			m.newPickerCursor--
+			m = m.clampNewPickerOffset()
+		}
+	case "down":
+		if m.newPickerCursor < len(filtered)-1 {
+			m.newPickerCursor++
+			m = m.clampNewPickerOffset()
+		}
+	case "backspace":
+		if len(m.newPickerFilter) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.newPickerFilter)
+			m.newPickerFilter = m.newPickerFilter[:len(m.newPickerFilter)-size]
+			m.newPickerCursor = 0
+			m.newPickerOffset = 0
+		}
+	case "enter":
+		if len(filtered) > 0 {
+			dir := filtered[m.newPickerCursor].Path
+			existing := make(map[string]bool, len(m.sessions))
+			for _, s := range m.sessions {
+				existing[s.ID] = true
+			}
+			m.pickingNew = false
+			m.newPickerFilter = ""
+			return m, newSessionCmd(existing, dir, m.settings.DangerouslySkipPermissions)
+		}
+	default:
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			m.newPickerFilter += msg.String()
+			m.newPickerCursor = 0
+			m.newPickerOffset = 0
+		}
+	}
+	return m, nil
+}
+
+func (m model) filteredNewProjects() []projectEntry {
+	if m.newPickerFilter == "" {
+		return m.newPickerProjects
+	}
+	filter := strings.ToLower(m.newPickerFilter)
+	var out []projectEntry
+	for _, p := range m.newPickerProjects {
+		if strings.Contains(strings.ToLower(formatPath(p.Path)), filter) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (m model) clampNewPickerOffset() model {
+	page := m.newPickerPageSize()
+	if m.newPickerCursor < m.newPickerOffset {
+		m.newPickerOffset = m.newPickerCursor
+	} else if m.newPickerCursor >= m.newPickerOffset+page {
+		m.newPickerOffset = m.newPickerCursor - page + 1
+	}
+	return m
+}
+
+func (m model) newPickerPageSize() int {
+	return max(1, m.height-1-3-4)
+}
+
+func buildNewPickerProjects(sessions []store.Session, cwd string) []projectEntry {
+	seenDir := map[string]bool{}
+	var projects []projectEntry
+
+	// CWD is always first; find its encoded dir if it has existing sessions
+	var cwdEntry projectEntry
+	cwdEntry.Path = cwd
+	for _, s := range sessions {
+		if s.ProjectPath == cwd && s.ProjectDir != "" {
+			cwdEntry.Dir = s.ProjectDir
+			seenDir[s.ProjectDir] = true
+			break
+		}
+	}
+	projects = append(projects, cwdEntry)
+
+	// Append all other known projects
+	for _, s := range sessions {
+		if s.ProjectDir != "" && !seenDir[s.ProjectDir] {
+			seenDir[s.ProjectDir] = true
+			projects = append(projects, projectEntry{Path: s.ProjectPath, Dir: s.ProjectDir})
+		}
+	}
+
+	return projects
 }
 
 func (m model) handleMoved(id, newProject, newDir string) model {
@@ -774,7 +883,9 @@ func (m model) renderPreview(width int) string {
 	contentHeight := max(0, usable-headerLines)
 
 	var contentLines []string
-	if m.confirmNew {
+	if m.pickingNew {
+		contentLines = m.renderNewPickerOverlay(width)
+	} else if m.confirmNew {
 		contentLines = m.renderConfirmNewOverlay(width)
 	} else if m.showSettings {
 		contentLines = m.renderSettingsOverlay(width)
@@ -830,6 +941,54 @@ func (m model) renderMessages(width int) []string {
 func (m model) renderRenameOverlay(_ int) []string {
 	prompt := "Rename: " + m.renameInput + "█"
 	return []string{"", prompt, "", dimStyle.Render("enter to confirm, esc to cancel")}
+}
+
+func (m model) renderNewPickerOverlay(width int) []string {
+	filtered := m.filteredNewProjects()
+	cwdPath := ""
+	if len(m.newPickerProjects) > 0 {
+		cwdPath = m.newPickerProjects[0].Path
+	}
+
+	filterDisplay := m.newPickerFilter + "█"
+	if m.newPickerFilter == "" {
+		filterDisplay = dimStyle.Render("type to filter…") + "█"
+	}
+
+	lines := []string{
+		"",
+		previewHeaderStyle.Render("New session in:"),
+		filterDisplay,
+		dimStyle.Render(strings.Repeat("─", max(0, width-1))),
+	}
+
+	page := m.newPickerPageSize()
+	end := m.newPickerOffset + page
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	if len(filtered) == 0 {
+		lines = append(lines, dimStyle.Render("  no matches"))
+	}
+
+	for i := m.newPickerOffset; i < end; i++ {
+		p := filtered[i]
+		display := formatPath(p.Path)
+		if width > 5 && len(display) > width-4 {
+			display = "…" + display[len(display)-(width-5):]
+		}
+		if p.Path == cwdPath {
+			display += dimStyle.Render(" (current dir)")
+		}
+		row := "  " + display
+		if i == m.newPickerCursor {
+			row = selectedStyle.Render("> " + display)
+		}
+		lines = append(lines, row)
+	}
+
+	return lines
 }
 
 func (m model) renderMoveOverlay(width int) []string {
@@ -927,7 +1086,9 @@ func (m model) renderConfirmOverlay(width int) []string {
 
 func (m model) renderStatusBar() string {
 	var keys string
-	if m.confirmNew {
+	if m.pickingNew {
+		keys = "↑/↓ select project  enter start session  esc cancel"
+	} else if m.confirmNew {
 		keys = "y/enter keep   n delete   esc keep"
 	} else if m.searching {
 		vs := m.visibleSessions()
