@@ -103,7 +103,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sessionDeletedMsg:
-		return m.handleDeleted(msg.id), nil
+		m = m.handleDeleted(msg.id)
+		var cmd tea.Cmd
+		m, cmd = m.triggerPreview()
+		return m, cmd
 
 	case sessionRenamedMsg:
 		return m.handleRenamed(msg.id, msg.name), nil
