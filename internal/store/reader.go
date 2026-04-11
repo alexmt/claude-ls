@@ -20,6 +20,18 @@ type jsonlEntry struct {
 	Cwd         string    `json:"cwd"`
 }
 
+// msgEntry is used to extract human message text from session JSONL entries.
+type msgEntry struct {
+	Type    string `json:"type"`
+	Message struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"message"`
+}
+
 type historyEntry struct {
 	Display   string `json:"display"`
 	SessionID string `json:"sessionId"`
@@ -123,6 +135,22 @@ func readSession(path, id string) (Session, error) {
 		}
 		if !e.Timestamp.IsZero() {
 			lastTimestamp = e.Timestamp
+		}
+
+		// capture last meaningful message text (user or assistant) for list preview
+		if e.Type == "user" || e.Type == "assistant" {
+			var me msgEntry
+			if json.Unmarshal(line, &me) == nil {
+				for _, block := range me.Message.Content {
+					if block.Type == "text" {
+						t := strings.TrimSpace(block.Text)
+						if t != "" && !strings.HasPrefix(t, "[Request interrupted") {
+							s.LastMsg = t
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 
