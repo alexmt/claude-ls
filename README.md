@@ -70,6 +70,7 @@ Running `claude-ls` opens a split-pane terminal UI:
 | `↑ / ↓` or `j / k` | Navigate session list |
 | `g / G` | Jump to top / bottom of list |
 | `/` | Search sessions by title and last message |
+| `n` | Start a new Claude session (prompts keep/delete on exit) |
 | `enter` | Resume selected session in Claude |
 | `r` | Rename selected session (inline input, supports spaces) |
 | `m` | Move session to another project (picker with live filter) |
@@ -84,6 +85,8 @@ Running `claude-ls` opens a split-pane terminal UI:
 - **Dangerously skip permissions** — when enabled, `--dangerously-skip-permissions` is passed to `claude --resume` every time you open a session. Toggle with `enter` or `space`. Settings are saved to `~/.config/claude-ls/settings.json`.
 
 **Search** — `[/]` enters search mode. Type to filter by session title or last message snippet; matches are highlighted inline. The status bar shows the query and result count. `↑/↓` navigate filtered results, `enter` resumes, `esc` exits and returns the cursor to the full list.
+
+**New session** — `[n]` starts a fresh Claude session in the current working directory. When the session exits, a prompt appears in the preview pane: `y`/`enter`/`esc` keeps it, `n` deletes it immediately. This prevents one-off sessions from accumulating in the list.
 
 **Named sessions** — sessions renamed with `[r]` — sort to the top, marked with `»`. The name is written directly to the session JSONL file as a `custom-title` entry (same format Claude Code uses internally). No extra files stored by claude-ls.
 

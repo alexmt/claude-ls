@@ -45,6 +45,10 @@ type sessionMovedMsg struct {
 	newDir     string // encoded directory name
 }
 
+type newSessionExitMsg struct {
+	existingIDs map[string]bool
+}
+
 type projectEntry struct {
 	Path string // human-readable, for display
 	Dir  string // encoded directory name, for file operations
@@ -77,6 +81,9 @@ type model struct {
 
 	showSettings   bool
 	settingsCursor int
+
+	confirmNew   bool   // keep-or-delete prompt after a new session exits
+	newSessionID string // ID of the session just created
 
 	settings store.Settings
 
@@ -158,6 +165,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionMovedMsg:
 		return m.handleMoved(msg.id, msg.newProject, msg.newDir), nil
 
+	case newSessionExitMsg:
+		return m.handleNewSessionExit(msg.existingIDs)
+
 	case tea.KeyMsg:
 		if m.renaming {
 			return m.updateRename(msg)
@@ -170,6 +180,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searching {
 			return m.updateSearch(msg)
+		}
+		if m.confirmNew {
+			return m.updateConfirmNew(msg)
 		}
 		if m.showSettings {
 			return m.updateSettings(msg)
@@ -271,6 +284,16 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneList {
 			m.showSettings = true
 			m.settingsCursor = 0
+		}
+
+	case "n":
+		if m.focus == paneList {
+			existing := make(map[string]bool, len(m.sessions))
+			for _, s := range m.sessions {
+				existing[s.ID] = true
+			}
+			cwd, _ := os.Getwd()
+			return m, newSessionCmd(existing, cwd, m.settings.DangerouslySkipPermissions)
 		}
 	}
 
@@ -421,6 +444,90 @@ func (m model) handleMoved(id, newProject, newDir string) model {
 		}
 	}
 	return m
+}
+
+func (m model) handleNewSessionExit(existingIDs map[string]bool) (tea.Model, tea.Cmd) {
+	// Reload sessions from disk to pick up the newly created session.
+	newSessions, _ := store.Load()
+	m.sessions = newSessions
+	m.searching = false
+	m.searchQuery = ""
+
+	// Find the newest session not present before the new session was started.
+	var newID string
+	var newestTime time.Time
+	for _, s := range m.sessions {
+		if !existingIDs[s.ID] {
+			if newID == "" || s.LastActive.After(newestTime) {
+				newID = s.ID
+				newestTime = s.LastActive
+			}
+		}
+	}
+
+	if newID != "" {
+		m.newSessionID = newID
+		m.confirmNew = true
+		for i, s := range m.sessions {
+			if s.ID == newID {
+				m.cursor = i
+				break
+			}
+		}
+	} else {
+		// Nothing was created (user exited immediately); just refresh.
+		if m.cursor >= len(m.sessions) {
+			m.cursor = max(0, len(m.sessions)-1)
+		}
+	}
+	m = m.clampListOffset()
+	m, cmd := m.triggerPreview()
+	return m, cmd
+}
+
+func (m model) updateConfirmNew(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter", "esc":
+		m.confirmNew = false // keep the session
+	case "n", "N":
+		m.confirmNew = false
+		for _, s := range m.sessions {
+			if s.ID == m.newSessionID {
+				return m, deleteSession(s)
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m model) renderConfirmNewOverlay(width int) []string {
+	var s *store.Session
+	for i := range m.sessions {
+		if m.sessions[i].ID == m.newSessionID {
+			s = &m.sessions[i]
+			break
+		}
+	}
+
+	lines := []string{
+		"",
+		previewHeaderStyle.Render("Session ended — keep it?"),
+		"",
+	}
+	if s != nil {
+		lines = append(lines,
+			"  "+truncate(s.DisplayName(), width-4),
+			"  "+dimStyle.Render(formatPath(s.ProjectPath)+" • "+formatAge(s.LastActive)),
+			"",
+		)
+	}
+	lines = append(lines,
+		"  y / enter  keep",
+		dangerStyle.Render("  n          delete"),
+		"",
+		dimStyle.Render("  esc also keeps"),
+	)
+	return lines
 }
 
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -667,7 +774,9 @@ func (m model) renderPreview(width int) string {
 	contentHeight := max(0, usable-headerLines)
 
 	var contentLines []string
-	if m.showSettings {
+	if m.confirmNew {
+		contentLines = m.renderConfirmNewOverlay(width)
+	} else if m.showSettings {
 		contentLines = m.renderSettingsOverlay(width)
 	} else if m.moving {
 		contentLines = m.renderMoveOverlay(width)
@@ -818,7 +927,9 @@ func (m model) renderConfirmOverlay(width int) []string {
 
 func (m model) renderStatusBar() string {
 	var keys string
-	if m.searching {
+	if m.confirmNew {
+		keys = "y/enter keep   n delete   esc keep"
+	} else if m.searching {
 		vs := m.visibleSessions()
 		count := fmt.Sprintf("%d/%d", len(vs), len(m.sessions))
 		keys = "/ " + m.searchQuery + "█   " + count + "   ↑/↓ navigate  enter resume  esc cancel"
@@ -831,7 +942,7 @@ func (m model) renderStatusBar() string {
 	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "/ search  enter resume  r rename  m move  d delete  s settings  g/G top/bottom  tab focus  q quit"
+		keys = "n new  / search  enter resume  r rename  m move  d delete  s settings  g/G top/bottom  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}
@@ -846,6 +957,18 @@ func loadPreview(s store.Session) tea.Cmd {
 		msgs, _ := store.LoadPreview(s)
 		return previewLoadedMsg{sessionID: s.ID, messages: msgs}
 	}
+}
+
+func newSessionCmd(existingIDs map[string]bool, dir string, skipPerms bool) tea.Cmd {
+	args := []string{}
+	if skipPerms {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	cmd := exec.Command("claude", args...)
+	cmd.Dir = dir
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return newSessionExitMsg{existingIDs: existingIDs}
+	})
 }
 
 func resumeSession(s store.Session, skipPerms bool) tea.Cmd {
