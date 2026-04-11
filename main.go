@@ -17,8 +17,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	settings := store.LoadSettings()
+
 	p := tea.NewProgram(
-		tui.New(sessions),
+		tui.New(sessions, settings),
 		tea.WithAltScreen(),
 	)
 
