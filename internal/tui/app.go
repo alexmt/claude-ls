@@ -72,11 +72,50 @@ type model struct {
 	moveOffset   int
 	moveFilter   string
 
+	searching   bool
+	searchQuery string
+
 	width, height int
 }
 
 func New(sessions []store.Session) model {
 	return model{sessions: sessions}
+}
+
+func (m model) visibleSessions() []store.Session {
+	if m.searchQuery == "" {
+		return m.sessions
+	}
+	q := strings.ToLower(m.searchQuery)
+	var out []store.Session
+	for _, s := range m.sessions {
+		if strings.Contains(strings.ToLower(s.DisplayName()), q) ||
+			strings.Contains(strings.ToLower(s.LastMsg), q) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (m model) exitSearch() model {
+	vs := m.visibleSessions()
+	var targetID string
+	if m.cursor < len(vs) {
+		targetID = vs[m.cursor].ID
+	}
+	m.searching = false
+	m.searchQuery = ""
+	if targetID != "" {
+		for i, s := range m.sessions {
+			if s.ID == targetID {
+				m.cursor = i
+				break
+			}
+		}
+	} else {
+		m.cursor = 0
+	}
+	return m.clampListOffset()
 }
 
 func (m model) Init() tea.Cmd {
@@ -123,6 +162,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.moving {
 			return m.updateMove(msg)
+		}
+		if m.searching {
+			return m.updateSearch(msg)
 		}
 		return m.updateNav(msg)
 	}
@@ -208,6 +250,14 @@ func (m model) updateNav(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.moveCursor = 0
 			}
 		}
+
+	case "/":
+		if m.focus == paneList {
+			m.searching = true
+			m.searchQuery = ""
+			m.cursor = 0
+			m.listOffset = 0
+		}
 	}
 
 	return m, nil
@@ -253,6 +303,66 @@ func (m model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	vs := m.visibleSessions()
+	var currentID string
+	if m.cursor < len(vs) {
+		currentID = vs[m.cursor].ID
+	}
+
+	switch msg.String() {
+	case "esc":
+		m = m.exitSearch()
+		m, cmd := m.triggerPreview()
+		return m, cmd
+	case "enter":
+		vs := m.visibleSessions()
+		if m.cursor < len(vs) {
+			return m, resumeSession(vs[m.cursor])
+		}
+		return m, nil
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+			m = m.clampListOffset()
+			m, cmd := m.triggerPreview()
+			return m, cmd
+		}
+		return m, nil
+	case "down", "j":
+		vs := m.visibleSessions()
+		if m.cursor < len(vs)-1 {
+			m.cursor++
+			m = m.clampListOffset()
+			m, cmd := m.triggerPreview()
+			return m, cmd
+		}
+		return m, nil
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.searchQuery)
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-size]
+		}
+	default:
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			m.searchQuery += msg.String()
+		}
+	}
+
+	// After query change, keep cursor on same session if still visible
+	newVs := m.visibleSessions()
+	m.cursor = 0
+	for i, s := range newVs {
+		if s.ID == currentID {
+			m.cursor = i
+			break
+		}
+	}
+	m = m.clampListOffset()
+	m, cmd := m.triggerPreview()
+	return m, cmd
 }
 
 func (m model) filteredProjects() []projectEntry {
@@ -379,10 +489,11 @@ func (m model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) triggerPreview() (model, tea.Cmd) {
-	if len(m.sessions) == 0 {
+	vs := m.visibleSessions()
+	if len(vs) == 0 {
 		return m, nil
 	}
-	s := m.sessions[m.cursor]
+	s := vs[m.cursor]
 	if s.ID == m.previewID {
 		return m, nil
 	}
@@ -392,10 +503,11 @@ func (m model) triggerPreview() (model, tea.Cmd) {
 }
 
 func (m model) currentID() string {
-	if len(m.sessions) == 0 {
+	vs := m.visibleSessions()
+	if len(vs) == 0 {
 		return ""
 	}
-	return m.sessions[m.cursor].ID
+	return vs[m.cursor].ID
 }
 
 func (m model) View() string {
@@ -436,10 +548,11 @@ func (m model) clampListOffset() model {
 
 func (m model) renderList(width int) string {
 	usable := m.height - 1 // display lines available
+	vs := m.visibleSessions()
 
-	// find where the named/regular separator falls
+	// find where the named/regular separator falls in visible sessions
 	namedCount := 0
-	for _, s := range m.sessions {
+	for _, s := range vs {
 		if s.IsNamed {
 			namedCount++
 		} else {
@@ -448,15 +561,15 @@ func (m model) renderList(width int) string {
 	}
 
 	var displayLines []string
-	for i := m.listOffset; i < len(m.sessions); i++ {
-		s := m.sessions[i]
+	for i := m.listOffset; i < len(vs); i++ {
+		s := vs[i]
 
 		// separator between named and regular sections
 		if i == namedCount && namedCount > 0 && i > m.listOffset {
 			displayLines = append(displayLines, separatorStyle.Render(strings.Repeat("─", width)))
 		}
 
-		row := m.renderSessionRow(s, i == m.cursor, width)
+		row := m.renderSessionRow(s, i == m.cursor, width, m.searchQuery)
 		// each row is "line1\nline2\nline3" — split and add individually
 		displayLines = append(displayLines, strings.Split(row, "\n")...)
 
@@ -473,7 +586,7 @@ func (m model) renderList(width int) string {
 	return strings.Join(displayLines[:usable], "\n")
 }
 
-func (m model) renderSessionRow(s store.Session, selected bool, width int) string {
+func (m model) renderSessionRow(s store.Session, selected bool, width int, query string) string {
 	marker := "  "
 	if s.IsNamed {
 		marker = "» "
@@ -507,14 +620,17 @@ func (m model) renderSessionRow(s store.Session, selected bool, width int) strin
 	// collapse newlines so multi-line messages stay on one row
 	snippet = strings.ReplaceAll(snippet, "\n", " ")
 
-	row1 := marker + name + strings.Repeat(" ", padding) + " " + age
-	row2 := "  " + dimStyle.Render(path)
-	row3 := "  " + dimStyle.Render(snippet)
-
+	var row1, row2, row3 string
 	if selected {
-		row1 = selectedStyle.Render(row1)
-		row2 = selectedStyle.Render(row2)
-		row3 = selectedStyle.Render(row3)
+		row1 = selectedStyle.Render(marker + name + strings.Repeat(" ", padding) + " " + age)
+		row2 = selectedStyle.Render("  " + path)
+		row3 = selectedStyle.Render("  " + snippet)
+	} else {
+		nameHL := renderWithHighlight(name, query, lipgloss.NewStyle(), matchStyle)
+		snippetHL := renderWithHighlight(snippet, query, dimStyle, matchStyle)
+		row1 = marker + nameHL + strings.Repeat(" ", padding) + " " + age
+		row2 = "  " + dimStyle.Render(path)
+		row3 = "  " + snippetHL
 	}
 
 	return row1 + "\n" + row2 + "\n" + row3
@@ -522,12 +638,13 @@ func (m model) renderSessionRow(s store.Session, selected bool, width int) strin
 
 func (m model) renderPreview(width int) string {
 	usable := m.height - 1
+	vs := m.visibleSessions()
 
-	if len(m.sessions) == 0 {
+	if len(vs) == 0 {
 		return strings.Repeat(" \n", max(0, usable))
 	}
 
-	s := m.sessions[m.cursor]
+	s := vs[m.cursor]
 	header := previewHeaderStyle.Render(truncate(s.DisplayName(), width-1)) + "\n"
 	subheader := dimStyle.Render(formatPath(s.ProjectPath)+" • "+formatAge(s.LastActive)) + "\n"
 	sep := dimStyle.Render(strings.Repeat("─", max(0, width-1))) + "\n"
@@ -648,14 +765,18 @@ func (m model) renderConfirmOverlay(width int) []string {
 
 func (m model) renderStatusBar() string {
 	var keys string
-	if m.moving {
+	if m.searching {
+		vs := m.visibleSessions()
+		count := fmt.Sprintf("%d/%d", len(vs), len(m.sessions))
+		keys = "/ " + m.searchQuery + "█   " + count + "   ↑/↓ navigate  enter resume  esc cancel"
+	} else if m.moving {
 		keys = "↑/↓ select project  enter move here  esc cancel"
 	} else if m.confirming {
 		keys = "y delete  n cancel"
 	} else if m.renaming {
 		keys = "enter confirm  esc cancel"
 	} else if m.focus == paneList {
-		keys = "enter resume  r rename  m move  d delete  g/G top/bottom  tab focus  q quit"
+		keys = "/ search  enter resume  r rename  m move  d delete  g/G top/bottom  tab focus  q quit"
 	} else {
 		keys = "j/k scroll  tab focus  q quit"
 	}
@@ -720,6 +841,7 @@ var (
 	assistantStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	statusStyle        = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("250"))
 	dangerStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	matchStyle         = lipgloss.NewStyle().Background(lipgloss.Color("220")).Foreground(lipgloss.Color("0")).Bold(true)
 )
 
 // helpers
@@ -803,4 +925,30 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderWithHighlight renders text with query matches highlighted using matchSt,
+// and non-matching segments styled with base.
+func renderWithHighlight(text, query string, base, matchSt lipgloss.Style) string {
+	if query == "" {
+		return base.Render(text)
+	}
+	lower := strings.ToLower(text)
+	lowerQ := strings.ToLower(query)
+	var result strings.Builder
+	start := 0
+	for {
+		rel := strings.Index(lower[start:], lowerQ)
+		if rel < 0 {
+			break
+		}
+		abs := start + rel
+		if abs > start {
+			result.WriteString(base.Render(text[start:abs]))
+		}
+		result.WriteString(matchSt.Render(text[abs : abs+len(lowerQ)]))
+		start = abs + len(lowerQ)
+	}
+	result.WriteString(base.Render(text[start:]))
+	return result.String()
 }

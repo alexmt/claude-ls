@@ -69,6 +69,7 @@ Running `claude-ls` opens a split-pane terminal UI:
 |-----|--------|
 | `↑ / ↓` or `j / k` | Navigate session list |
 | `g / G` | Jump to top / bottom of list |
+| `/` | Search sessions by title and last message |
 | `enter` | Resume selected session in Claude |
 | `r` | Rename selected session (inline input, supports spaces) |
 | `m` | Move session to another project (picker with live filter) |
@@ -76,6 +77,8 @@ Running `claude-ls` opens a split-pane terminal UI:
 | `tab` | Switch focus between list and preview pane |
 | `j / k` | Scroll preview pane (when focused) |
 | `q` | Quit |
+
+**Search** — `[/]` enters search mode. Type to filter by session title or last message snippet; matches are highlighted inline. The status bar shows the query and result count. `↑/↓` navigate filtered results, `enter` resumes, `esc` exits and returns the cursor to the full list.
 
 **Named sessions** — sessions renamed with `[r]` — sort to the top, marked with `»`. The name is written directly to the session JSONL file as a `custom-title` entry (same format Claude Code uses internally). No extra files stored by claude-ls.
 
