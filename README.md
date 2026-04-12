@@ -86,7 +86,7 @@ Running `claude-ls` opens a split-pane terminal UI:
 
 **Search** — `[/]` enters search mode. Type to filter by session title or last message snippet; matches are highlighted inline. The status bar shows the query and result count. `↑/↓` navigate filtered results, `enter` resumes, `esc` exits and returns the cursor to the full list.
 
-**New session** — `[n]` starts a fresh Claude session in the current working directory. When the session exits, a prompt appears in the preview pane: `y`/`enter`/`esc` keeps it, `n` deletes it immediately. This prevents one-off sessions from accumulating in the list.
+**New session** — `[n]` opens a project picker in the preview pane. The current working directory is pre-selected and tagged `(current dir)`; all other known projects are listed below. Type to filter, `↑/↓` to navigate, `enter` to start a new Claude session in the chosen directory. When the session exits, a prompt appears: `y`/`enter`/`esc` keeps it, `n` deletes it immediately. This prevents one-off sessions from accumulating in the list.
 
 **Named sessions** — sessions renamed with `[r]` — sort to the top, marked with `»`. The name is written directly to the session JSONL file as a `custom-title` entry (same format Claude Code uses internally). No extra files stored by claude-ls.
 
