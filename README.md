@@ -4,7 +4,6 @@ A terminal UI for managing Claude Code sessions.
 
 ![demo](https://github.com/user-attachments/assets/78d747d2-5846-485e-8cac-ee142dd43b8c)
 
-
 ## The Problem
 
 Claude Code links sessions to directory paths — `~/.claude/projects/` uses encoded directory names (e.g. `-Users-alex-root-myproject`). This creates three friction points:
@@ -20,12 +19,14 @@ Claude Code links sessions to directory paths — `~/.claude/projects/` uses enc
 ## Installation
 
 **Homebrew (recommended):**
+
 ```bash
 brew tap alexmt/tap
 brew install claude-ls
 ```
 
 **Build from source:**
+
 ```bash
 git clone https://github.com/alexmt/claude-ls.git
 cd claude-ls
@@ -35,7 +36,7 @@ make build
 
 ## Usage
 
-```
+```bash
 claude-ls    # open interactive TUI
 ```
 
@@ -43,7 +44,7 @@ claude-ls    # open interactive TUI
 
 Running `claude-ls` opens a split-pane terminal UI:
 
-```
+```text
 ┌─ claude-ls ────────────────────────────────┬─ preview ──────────────────────────┐
 │ » auth-middleware-refactor  2h ago  42     │ auth-middleware-refactor           │
 │   ~/root/myproject                         │ ~/root/myproject  •  2 hours ago   │
@@ -96,6 +97,14 @@ Running `claude-ls` opens a split-pane terminal UI:
 
 **Preview pane** — shows the conversation tail (most recent messages first). Switch focus with `tab`, scroll with `j / k`.
 
+## Configuration
+
+By default `claude-ls` reads from `~/.claude/`. Set the `CLAUDE_CONFIG_DIR` environment variable to use a different directory:
+
+```bash
+export CLAUDE_CONFIG_DIR=/path/to/custom/claude
+```
+
 ## Data Model
 
 `claude-ls` reads everything from `~/.claude/projects/` with no extra state:
@@ -112,7 +121,7 @@ Running `claude-ls` opens a split-pane terminal UI:
 
 ### `~/.claude/projects/` structure
 
-```
+```text
 ~/.claude/projects/
 └── -Users-alex-root-myproject/         # encoded project path
     ├── c7b5480d-...-3d4ef5.jsonl       # session (one per conversation)
@@ -137,6 +146,6 @@ Each session JSONL is newline-delimited JSON. Relevant entry types:
 
 ## Build
 
-```
+```bash
 make build    # outputs dist/claude-ls
 ```

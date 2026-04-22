@@ -38,13 +38,12 @@ type historyEntry struct {
 }
 
 func Load() ([]Session, error) {
-	home, err := os.UserHomeDir()
+	base, err := ClaudeDir()
 	if err != nil {
 		return nil, err
 	}
-
-	projectsDir := filepath.Join(home, ".claude", "projects")
-	history, _ := loadHistory(filepath.Join(home, ".claude", "history.jsonl"))
+	projectsDir := filepath.Join(base, "projects")
+	history, _ := loadHistory(filepath.Join(base, "history.jsonl"))
 
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {

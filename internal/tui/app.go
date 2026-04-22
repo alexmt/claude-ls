@@ -1155,8 +1155,11 @@ func moveSession(s store.Session, targetDir, targetPath string) tea.Cmd {
 
 func deleteSession(s store.Session) tea.Cmd {
 	return func() tea.Msg {
-		home, _ := os.UserHomeDir()
-		base := filepath.Join(home, ".claude", "projects", s.ProjectDir)
+		base, err := store.ClaudeDir()
+		if err != nil {
+			return nil
+		}
+		base = filepath.Join(base, "projects", s.ProjectDir)
 		_ = os.Remove(filepath.Join(base, s.ID+".jsonl"))
 		_ = os.RemoveAll(filepath.Join(base, s.ID))
 		return sessionDeletedMsg{id: s.ID}
