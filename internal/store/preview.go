@@ -37,12 +37,11 @@ type previewEntry struct {
 }
 
 func LoadPreview(session Session) ([]PreviewMessage, error) {
-	home, err := os.UserHomeDir()
+	base, err := ClaudeDir()
 	if err != nil {
 		return nil, err
 	}
-
-	jsonlPath := filepath.Join(home, ".claude", "projects", session.ProjectDir, session.ID+".jsonl")
+	jsonlPath := filepath.Join(base, "projects", session.ProjectDir, session.ID+".jsonl")
 
 	f, err := os.Open(jsonlPath)
 	if err != nil {
